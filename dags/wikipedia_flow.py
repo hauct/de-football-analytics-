@@ -5,8 +5,10 @@ import sys
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
+from pipelines.wikipedia_pipelines import extract_wikipedia_data, transform_wikipedia_data, write_wikipedia_data
+
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipelines.wikipedia_pipelines import extract_wikipedia_data
 
 dag = DAG(
     dag_id='wikipedia_flow',
@@ -26,3 +28,18 @@ extract_data_from_wikipedia = PythonOperator(
     dag=dag
 )
 
+transform_wikipedia_data = PythonOperator(
+    task_id='transform_wikipedia_data',
+    provide_context=True,
+    python_callable=transform_wikipedia_data,
+    dag=dag
+)
+
+write_wikipedia_data = PythonOperator(
+    task_id='write_wikipedia_data',
+    provide_context=True,
+    python_callable=write_wikipedia_data,
+    dag=dag
+)
+
+extract_data_from_wikipedia >> transform_wikipedia_data >> write_wikipedia_data
