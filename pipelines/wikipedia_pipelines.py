@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import json
 from geopy.geocoders import Nominatim
+import pandas as pd
 
 def get_wikipedia_page(url):
     print(f'Getting wikipedia page...{url}')
@@ -69,33 +70,26 @@ def get_lat_long(country, city):
 
 
 def transform_wikipedia_data(**kwargs):
-    data = kwargs['ti'].xcom_pull(key='rows', task_ids='extract_wikipedia_data')
-    
-    data = json.load(data)
-    
-    stadiums_df = pd.DataFrame(data)
-    stadiums_df['location'] = stadiums_df.apply(lambda x: get_lat_long(x['country'], x['stadium']), axis=1)
-    stadiums_df['images'] = stadiums_df['images'].apply(lambda x: x if x not in ['NO_IMAGE', '', None] else 'NO_IMAGE')
-    stadiums_df['capacity'] = stadiums_df['capacity'].astype(int)
+    data = kwargs['ti'].xcom_pull(key='rows', task_ids='extract_data_from_wikipedia')
+    data = json.loads(data)
 
-    # handle the duplicates
-    duplicates = stadiums_df[stadiums_df.duplicated(['location'])]
-    duplicates['location'] = duplicates.apply(lambda x: get_lat_long(x['country'], x['city']), axis=1)
-    stadiums_df.update(duplicates)
+    stadiums_df = pd.DataFrame(data)
+    stadiums_df['city'] = stadiums_df['city'].str.split(',').str[0].str.split('.').str[0]
+    stadiums_df['location'] = stadiums_df.apply(lambda x: get_lat_long(x['country'], x['city']), axis=1)
+    stadiums_df['images'] = stadiums_df['images'].apply(lambda x: x if x not in ['NO_IMAGE', '', None] else 'NO_IMAGE')
+    stadiums_df['capacity'] = stadiums_df['capacity'].str.replace(',','').str.replace('.','').astype(int)
 
     # push to xcom
     kwargs['ti'].xcom_push(key='rows', value=stadiums_df.to_json())
-    
     return "OK"
 
 def write_wikipedia_data(**kwargs):
     data = kwargs['ti'].xcom_pull(key='rows', task_ids='transform_wikipedia_data')
-    
     data = json.loads(data)
     data = pd.DataFrame(data)
-    
-    
+
+
     file_name = ('stadium_cleaned_' + str(datetime.now().date())
-                 + "_" + str(datetime.now().time()).replace(":", "_") + '.csv')
-    
+                    + "_" + str(datetime.now().time()).replace(":", "_") + '.csv')
+
     data.to_csv('data/' + file_name, index=False)
