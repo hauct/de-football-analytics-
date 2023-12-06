@@ -1,8 +1,13 @@
 import requests
 from bs4 import BeautifulSoup
 import json
-from geopy.geocoders import Nominatim
 import pandas as pd
+from geopy.geocoders import Nominatim
+from retrying import retry
+from datetime import datetime
+import psycopg2
+from sqlalchemy import create_engine
+from time import time
 
 def get_wikipedia_page(url):
     print(f'Getting wikipedia page...{url}')
@@ -59,15 +64,15 @@ def extract_wikipedia_data(**kwargs):
     
     return 'Ok'
     
-def get_lat_long(country, city):
-    geolocator = Nominatim(user_agent='hauct_Test_geopy')
-    location = geolocator.geocode(f'{city}, {country}')
+@retry(wait_exponential_multiplier=1000, wait_exponential_max=10000)
+def get_lat_long(city, country):
+    geolocator = Nominatim(user_agent='new_test_hauct')
+    location = geolocator.geocode(f'{city}, {country}', timeout=10)
 
     if location:
         return location.latitude, location.longitude
 
     return None
-
 
 def transform_wikipedia_data(**kwargs):
     data = kwargs['ti'].xcom_pull(key='rows', task_ids='extract_data_from_wikipedia')
@@ -86,10 +91,41 @@ def transform_wikipedia_data(**kwargs):
 def write_wikipedia_data(**kwargs):
     data = kwargs['ti'].xcom_pull(key='rows', task_ids='transform_wikipedia_data')
     data = json.loads(data)
-    data = pd.DataFrame(data)
+    stadiums_df = pd.DataFrame(data)
 
 
     file_name = ('stadium_cleaned_' + str(datetime.now().date())
                     + "_" + str(datetime.now().time()).replace(":", "_") + '.csv')
 
-    data.to_csv('data/' + file_name, index=False)
+    stadiums_df.to_csv('data/' + file_name, index=False)
+
+def ingest_wikipedia_data(**kwargs):
+    data = kwargs['ti'].xcom_pull(key='rows', task_ids='transform_wikipedia_data')
+    data = json.loads(data)
+    stadiums_df = pd.DataFrame(data)
+
+    # Hyper parameters
+    user = 'airflow'
+    password = 'airflow'
+    host = 'de-football-analytics--postgres-1'
+    port = '5432'
+    db = 'airflow'
+    table = 'stadium'
+
+    # Create engine to connect to pg db    
+    engine = create_engine(f'postgresql://{user}:{password}@{host}:{port}/{db}')
+
+    # Ingest to PostgreSQL database
+    chunk_size = 100
+    for start in range(0, len(stadiums_df), chunk_size):
+        t_start = time()
+
+        stadiums_df_chunk = stadiums_df[start:start + chunk_size]
+        stadiums_df_chunk.to_sql(table, engine, if_exists='append', index=False)
+
+        t_end = time()
+
+        print('Inserted chunk, took %.3f second' % (t_end-t_start))
+        
+    print('Finished ingesting data into the postgres database')
+

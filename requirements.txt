@@ -2,3 +2,6 @@ beautifulsoup4
 pandas
 geopy
 datetime
+sqlalchemy
+psycopg2-binary
+retrying
