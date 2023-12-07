@@ -66,7 +66,7 @@ def extract_wikipedia_data(**kwargs):
     
 @retry(wait_exponential_multiplier=1000, wait_exponential_max=10000)
 def get_lat_long(city, country):
-    geolocator = Nominatim(user_agent='new_test_hauct')
+    geolocator = Nominatim(user_agent='hauct_geopy_key')
     location = geolocator.geocode(f'{city}, {country}', timeout=10)
 
     if location:
